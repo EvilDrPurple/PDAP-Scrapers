@@ -6,52 +6,76 @@ from requests_html import HTMLSession
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.action_chains import ScrollOrigin
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 from content import videos
 
 
 def test():
-    url = "https://citydocs.longbeach.gov/LBPDPublicDocs/Browse.aspx?id=198678&dbid=0&repo=LBPD-PUBDOCS"
-    #session = HTMLSession()
-    #headers = {
-    #    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
-    #}
-    #r = session.get(url)
-    #r.html.render()
-    #print(r.html.html)
+    url = "https://citydocs.longbeach.gov/LBPDPublicDocs/Browse.aspx?id=198677&dbid=0&repo=LBPD-PUBDOCS"
 
-    driver = webdriver.Chrome()
+    chrome_options = Options()
+    #chrome_options.add_argument("--headless=new")
+    driver = webdriver.Chrome(options=chrome_options)
     driver.get(url)
-    table = driver.find_element(By.CLASS_NAME, "browseMain")
-    scroll_origin = ScrollOrigin.from_element(table)
 
+    gather_links(driver)
+
+    input()
+    driver.quit()
+
+
+def gather_links(driver, recursive_call=False):
+    wait = lambda: WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CLASS_NAME, "EntryNameColumn"))
+    )
+
+    wait()
     soup = BeautifulSoup(driver.page_source, "html.parser")
     row_list = soup.find_all(class_="EntryNameColumn")
+
+    p = 0
+    while p < len(row_list) and "FolderIcon" in str(row_list[p]):
+        link_text = row_list[p].get_text().strip()
+        folder_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, link_text)))
+        folder_link.click()
+
+        links = gather_links(driver, recursive_call=True)
+
+        driver.back()
+        wait()
+        p = p + 1
+
+    table = driver.find_element(By.CLASS_NAME, "browseMain")
+    scroll_origin = ScrollOrigin.from_element(table)
     row_lists = [row_list]
     row_list = None
 
     while row_lists[-1] != row_list:
         if row_list:
             row_lists.append(row_list)
-        
+
         ActionChains(driver)\
-            .scroll_from_origin(scroll_origin, 0, 2000)\
+            .scroll_from_origin(scroll_origin, 0, 1500)\
             .perform()
         
-        time.sleep(2)
+        time.sleep(1)
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
         row_list = soup.find_all(class_="EntryNameColumn")
 
     row_list = [row for row_list in row_lists for row in row_list]
+    row_list = set(row_list)
     for row in row_list:
-        print(row.get_text())
-
-    input()
-    driver.quit()
+        print(row.get_text().strip())
+    print(f"\n{len(row_list)}")
+    
+    return row_list
 
 
 def download_video_group(group_name, homepage_id, group_filename, start, end):
